@@ -6,3 +6,6 @@ __pycache__/
 snapshots/
 node_modules/
 dist/
+
+# ML models
+*.pt

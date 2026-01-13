@@ -42,7 +42,7 @@ class RTSPReader:
         ]
 
         # Event storage
-        self.event_store = EventStore(db_path="events.db")
+        self.event_store = EventStore()
 
     def connect(self):
         print(f"[INFO] Connecting to camera: {self.camera.name}")

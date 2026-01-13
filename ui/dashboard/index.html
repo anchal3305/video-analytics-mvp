@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Video Analytics Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>📹 Video Analytics Dashboard</h1>
+
+<section>
+  <h2>Cameras</h2>
+  <ul id="camera-list"></ul>
+</section>
+
+<section>
+  <h2>Events</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Camera</th>
+        <th>Rule</th>
+        <th>Zone</th>
+        <th>Confidence</th>
+        <th>Time</th>
+      </tr>
+    </thead>
+    <tbody id="event-table"></tbody>
+  </table>
+</section>
+
+<script src="app.js"></script>
+</body>
+</html>
