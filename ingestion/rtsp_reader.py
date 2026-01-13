@@ -1,7 +1,10 @@
 import cv2
 import time
+
 from ingestion.camera import Camera
 from inference.detector import YOLODetector
+from rules.zones import Zone
+from rules.rules_engine import RulesEngine
 
 
 class RTSPReader:
@@ -15,11 +18,27 @@ class RTSPReader:
         self.reconnect_delay = reconnect_delay
         self.detect_every_n_frames = detect_every_n_frames
 
+        # Video + inference
         self.cap = None
         self.detector = YOLODetector(conf_threshold=0.5)
 
         self.frame_count = 0
         self.last_detections = []
+
+        # 🔹 Rules engine
+        self.rules_engine = RulesEngine(loitering_threshold_sec=10)
+
+        # 🔹 Zones (hardcoded MVP)
+        self.zones = [
+            Zone(
+                zone_id=1,
+                name="Restricted Area",
+                x1=200,
+                y1=200,
+                x2=600,
+                y2=600
+            )
+        ]
 
     def connect(self):
         print(f"[INFO] Connecting to camera: {self.camera.name}")
@@ -57,14 +76,43 @@ class RTSPReader:
                 self.frame_count += 1
                 fps_frame_count += 1
 
-                # Run YOLO every N frames
+                # 🔹 YOLO inference every N frames
                 if self.frame_count % self.detect_every_n_frames == 0:
                     self.last_detections = self.detector.detect(frame)
 
-                # Draw detections
+                # 🔹 Draw detections
                 frame = self.detector.draw_detections(frame, self.last_detections)
 
-                # FPS calculation
+                # 🔹 Process rules
+                events = self.rules_engine.process_detections(
+                    camera_id=self.camera.camera_id,
+                    detections=self.last_detections,
+                    zones=self.zones
+                )
+
+                for event in events:
+                    print("[EVENT]", event)
+
+                # 🔹 Draw zones
+                for zone in self.zones:
+                    cv2.rectangle(
+                        frame,
+                        (zone.x1, zone.y1),
+                        (zone.x2, zone.y2),
+                        (255, 0, 0),
+                        2
+                    )
+                    cv2.putText(
+                        frame,
+                        zone.name,
+                        (zone.x1, zone.y1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.6,
+                        (255, 0, 0),
+                        2
+                    )
+
+                # 🔹 FPS calculation
                 elapsed = time.time() - fps_start_time
                 if elapsed >= 1.0:
                     fps = fps_frame_count / elapsed
