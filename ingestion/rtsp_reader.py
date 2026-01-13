@@ -5,6 +5,8 @@ from ingestion.camera import Camera
 from inference.detector import YOLODetector
 from rules.zones import Zone
 from rules.rules_engine import RulesEngine
+from events.store import EventStore
+from events.models import Event
 
 
 class RTSPReader:
@@ -15,20 +17,19 @@ class RTSPReader:
         reconnect_delay=5
     ):
         self.camera = camera
-        self.reconnect_delay = reconnect_delay
         self.detect_every_n_frames = detect_every_n_frames
+        self.reconnect_delay = reconnect_delay
 
-        # Video + inference
+        # Video capture
         self.cap = None
-        self.detector = YOLODetector(conf_threshold=0.5)
 
+        # AI inference
+        self.detector = YOLODetector(conf_threshold=0.5)
         self.frame_count = 0
         self.last_detections = []
 
-        # 🔹 Rules engine
+        # Rules & zones
         self.rules_engine = RulesEngine(loitering_threshold_sec=10)
-
-        # 🔹 Zones (hardcoded MVP)
         self.zones = [
             Zone(
                 zone_id=1,
@@ -39,6 +40,9 @@ class RTSPReader:
                 y2=600
             )
         ]
+
+        # Event storage
+        self.event_store = EventStore(db_path="events.db")
 
     def connect(self):
         print(f"[INFO] Connecting to camera: {self.camera.name}")
@@ -59,6 +63,7 @@ class RTSPReader:
 
         try:
             while True:
+                # Reconnect logic
                 if self.cap is None or not self.cap.isOpened():
                     self.camera.mark_offline()
                     time.sleep(self.reconnect_delay)
@@ -76,24 +81,35 @@ class RTSPReader:
                 self.frame_count += 1
                 fps_frame_count += 1
 
-                # 🔹 YOLO inference every N frames
+                # Run detection every N frames
                 if self.frame_count % self.detect_every_n_frames == 0:
                     self.last_detections = self.detector.detect(frame)
 
-                # 🔹 Draw detections
+                # Draw detections
                 frame = self.detector.draw_detections(frame, self.last_detections)
 
-                # 🔹 Process rules
-                events = self.rules_engine.process_detections(
+                # Apply rules
+                rule_events = self.rules_engine.process_detections(
                     camera_id=self.camera.camera_id,
                     detections=self.last_detections,
                     zones=self.zones
                 )
 
-                for event in events:
-                    print("[EVENT]", event)
+                # Store events
+                for e in rule_events:
+                    event = Event(
+                        camera_id=e["camera_id"],
+                        rule=e["rule"],
+                        zone=e["zone"],
+                        object_type=e["object_type"],
+                        confidence=e["confidence"],
+                        bbox=str(e["bbox"]),
+                        duration_sec=e.get("duration_sec")
+                    )
+                    self.event_store.insert_event(event)
+                    print("[EVENT STORED]", event)
 
-                # 🔹 Draw zones
+                # Draw zones
                 for zone in self.zones:
                     cv2.rectangle(
                         frame,
@@ -112,7 +128,7 @@ class RTSPReader:
                         2
                     )
 
-                # 🔹 FPS calculation
+                # FPS calculation
                 elapsed = time.time() - fps_start_time
                 if elapsed >= 1.0:
                     fps = fps_frame_count / elapsed
@@ -131,13 +147,13 @@ class RTSPReader:
 
                 cv2.imshow(self.camera.name, frame)
 
-                # ✅ Reliable exit
+                # Clean exit
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     print("[INFO] 'q' pressed. Exiting...")
                     break
 
         except KeyboardInterrupt:
-            print("\n[INFO] Keyboard interrupt received. Exiting...")
+            print("\n[INFO] Keyboard interrupt received")
 
         finally:
             self.stop()
@@ -157,6 +173,6 @@ if __name__ == "__main__":
         rtsp_url=1  # webcam
     )
 
-    reader = RTSPReader(camera, detect_every_n_frames=5)
+    reader = RTSPReader(camera)
     reader.connect()
     reader.start()
